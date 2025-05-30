@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     users.push(user);
 
     return NextResponse.json({ userId: user.userId }, { status: 201 });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 }

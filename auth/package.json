@@ -32,3 +32,6 @@
     "typescript": "^5"
   }
 }
+"engines": {
+  "node": ">=20"
+}

@@ -110,7 +110,7 @@ export default function SignIn() {
           finalUrl = redirectUrl;
         }
         if ((window.event as KeyboardEvent)?.ctrlKey && redirectUrl) {
-          window.location.href = "/home";
+          window.location.href = "chittersync.com/home";
         } else {
           window.location.href = finalUrl;
         }

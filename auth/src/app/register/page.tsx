@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faWandMagicSparkles, faKey, faEye, faEyeSlash, faIdBadge, faPhone, faUser, faAt, faLocationDot } from "@fortawesome/free-solid-svg-icons";
+import FontAwesomeNoSSR from "./FontAwesomeNoSSR";
+import HelpTooltip from "./HelpTooltip";
+import { faWandMagicSparkles, faKey, faEye, faEyeSlash, faIdBadge, faPhone, faUser, faAt, faLocationDot, faCircleQuestion, faWarning, faMars, faVenus, faGenderless, faQuestion } from "@fortawesome/free-solid-svg-icons";
 import { parsePhoneNumberFromString, AsYouType } from "libphonenumber-js";
 
 // AES-GCM encryption helpers
@@ -30,11 +31,6 @@ async function getAesKey(secret: string): Promise<CryptoKey> {
     false,
     ["encrypt"]
   );
-}
-
-if (typeof window !== "undefined") {
-  // @ts-expect-error: window.TRUSTED_DOMAINS is a custom global for trusted redirect logic
-  window.TRUSTED_DOMAINS = window.TRUSTED_DOMAINS || ["chittersync.com"];
 }
 
 function isTrustedRedirect(url: string, allowedDomains?: string[]) {
@@ -217,6 +213,86 @@ function formatPhoneNumberInput(input: string) {
   }
 }
 
+// Gender options for custom dropdown
+const genderOptions = [
+  { value: '', label: 'Select Gender', icon: faQuestion, color: 'text-gray-400' },
+  { value: 'male', label: 'Male', icon: faMars, color: 'text-blue-400' },
+  { value: 'female', label: 'Female', icon: faVenus, color: 'text-pink-400' },
+  { value: 'nonbinary', label: 'Non-binary', icon: faGenderless, color: 'text-yellow-400' },
+  { value: 'other', label: 'Other', icon: faGenderless, color: 'text-green-400' },
+  { value: 'prefer_not_to_say', label: 'Prefer not to say', icon: faQuestion, color: 'text-gray-400' },
+];
+
+// CustomGenderDropdown component
+function CustomGenderDropdown({ value, onChange }: { value: string, onChange: (val: string) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const selected = genderOptions.find(opt => opt.value === value) || genderOptions[0];
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  React.useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  // Keyboard navigation
+  function handleKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(v => !v);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        className="w-full p-3 pl-10 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+        onKeyDown={handleKeyDown}
+        id="gender"
+      >
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6">
+          <FontAwesomeNoSSR icon={selected.icon} className={selected.color} />
+        </span>
+        <span className="ml-6">{selected.label}</span>
+        <span className={`ml-auto transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+      </button>
+      {open && (
+        <ul
+          className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-60 overflow-auto text-gray-900"
+          role="listbox"
+          tabIndex={-1}
+        >
+          {genderOptions.map(opt => (
+            <li
+              key={opt.value}
+              role="option"
+              aria-selected={value === opt.value}
+              className={`flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-purple-100 ${value === opt.value ? 'bg-purple-200 font-bold' : ''}`}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              onKeyDown={e => { if (e.key === 'Enter') { onChange(opt.value); setOpen(false); } }}
+              tabIndex={0}
+            >
+              <FontAwesomeNoSSR icon={opt.icon} className={opt.color + ' text-lg'} />
+              <span>{opt.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function Register() {
   const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState<null | (() => void)>(null);
@@ -231,14 +307,56 @@ export default function Register() {
     dob: "",
     location: [""],
     tosAgreement: false,
+    pronouns: "",
+    bio: "",
+    website: "",
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showOptional, setShowOptional] = useState(false);
+
+  // Easter egg state for website field
+  const [websiteEasterEgg, setWebsiteEasterEgg] = useState(false);
 
   // Tooltip state for redirect info
   const [showRedirectTooltip, setShowRedirectTooltip] = useState(false);
   const [redirectTooltipTimeout, setRedirectTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // ToS/PP progress bar state
+  const [tosProgress, setTosProgress] = useState(0);
+  const [tosActive, setTosActive] = useState(false);
+  const [tosMessage, setTosMessage] = useState("");
+  const [tosLinksOpened, setTosLinksOpened] = useState({ tos: false, pp: false });
+  const tosTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Fix: Add missing key props for array elements in fieldHelp definitions
+  const fieldHelp = {
+    username: [
+      "Your public username for ChitterSync. \n\nthis is required because it is a your personal unique identifier for ChitterSync, share this with others so they can add you as a friend.\n\nButton Help: \n\n ",
+      <FontAwesomeNoSSR icon={faWandMagicSparkles} key="icon-wand" />,
+      " generates a random username for you if you cannot think of one."
+    ],
+    loginId: [
+      "A unique ID for logging in (not public). \n\n treat this like a password, as it is a login method you can use. DO NOT SHARE THIS \n\nButton Help: \n\n",
+      <FontAwesomeNoSSR icon={faIdBadge} key="icon-idbadge" />,
+      " generates a secure random login ID for you."
+    ],
+    password: [
+      "Choose a strong password for your account. \n\nButton Help: \n\n",
+      <FontAwesomeNoSSR icon={faKey} key="icon-key" />,
+      " generates a secure random password for you.\n",
+      <FontAwesomeNoSSR icon={faEye} key="icon-eye" />,
+      " Toggles dot obfuscation of the password.",
+      "\n\nExtra Help: \n\n the security strength of your password is shown below the field, \nit is recommended to have a strong password with at least 14 characters, \nincluding uppercase, lowercase, numbers, and symbols."
+    ],
+    email: "Used for account recovery and notifications. \n\n this is optional when you are using phone, but it is recommended to add an email for security purposes.",
+    phone: "Used for account recovery and security. \n\n this is optional when you are using email, but it is recommended to add a phone number for security purposes.",
+    dob: "Your date of birth (for age verification). \n\n if the entry is younger than 14 years, you will be limited to only Gia Streaming for Kids until your set dob is 14 years or a guardian sponsors your account, if entry is less younger than 10 you will not be able to use ChitterSync at all.",
+    location: "Your country or city, (optional, if not provided, your country will be inferred from your IP address via GeoLocation).",
+    name: "what you show up as globally on ChitterSync (optional).",
+    gender: "Your gender."
+  };
 
   // Helper to update dynamic fields
   const handleDynamicChange = (type: "email" | "phone" | "location", idx: number, value: string) => {
@@ -265,10 +383,17 @@ export default function Register() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const isPhoneFilled = form.phone.some((p) => p.trim() !== "");
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const target = e.target as HTMLInputElement | HTMLSelectElement;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const target = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
     const { name, value, type } = target;
     const checked = (type === "checkbox") ? (target as HTMLInputElement).checked : undefined;
+    // Easter egg logic for website field
+    if (name === "website") {
+      // Normalize input: remove protocol, trim, lowercase
+      let val = value.trim().toLowerCase();
+      val = val.replace(/^https?:\/\//, "");
+      setWebsiteEasterEgg(val === "example.com");
+    }
     setForm((prev) => ({
       ...prev,
       [name === "ToS Agreement" ? "tosAgreement" : name.toLowerCase().replace(/ /g,"")]: type === "checkbox" ? checked : value,
@@ -360,6 +485,66 @@ export default function Register() {
     }
   }
 
+  // TOS/PP progress bar logic
+  useEffect(() => {
+    if (!tosActive) return;
+    if (tosLinksOpened.tos && tosLinksOpened.pp) return;
+    setTosMessage("");
+    setTosProgress(0);
+    if (tosTimerRef.current) clearInterval(tosTimerRef.current);
+    let progress = 0;
+    tosTimerRef.current = setInterval(() => {
+      progress += 1;
+      setTosProgress(progress);
+      if (progress >= 100) {
+        clearInterval(tosTimerRef.current!);
+        setTosActive(false);
+      }
+    }, 100);
+    return () => {
+      if (tosTimerRef.current) clearInterval(tosTimerRef.current);
+    };
+  }, [tosActive, tosLinksOpened]);
+
+  function handleTosLinkClick(e: React.MouseEvent<HTMLAnchorElement, MouseEvent>, which: 'tos' | 'pp') {
+    e.preventDefault();
+    setTosLinksOpened(prev => ({ ...prev, [which]: true }));
+    setTosActive(false);
+    setTosMessage(
+      which === 'tos'
+        ? 'Please read the Terms of Service in the new tab, then return here to continue.'
+        : 'Please read the Privacy Policy in the new tab, then return here to continue.'
+    );
+    window.open(
+      which === 'tos'
+        ? 'https://support.chittersync.com/legal/tos'
+        : 'https://support.chittersync.com/legal/pp',
+      '_blank',
+      'noopener,noreferrer'
+    );
+  }
+
+  function handleTosCheckbox(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!form.tosAgreement && !(tosLinksOpened.tos && tosLinksOpened.pp) && tosProgress < 100) {
+      setTosActive(true);
+      setTosMessage('Please read the Terms of Service and Privacy Policy before agreeing.');
+      e.preventDefault();
+      return;
+    }
+    if (!e.target.checked) {
+      setTosLinksOpened({ tos: false, pp: false });
+      setTosProgress(0);
+      setTosActive(false);
+      setTosMessage("");
+    }
+    handleChange(e);
+  }
+
+  useEffect(() => {
+    // @ts-expect-error: window.TRUSTED_DOMAINS is a custom global for trusted redirect logic
+    window.TRUSTED_DOMAINS = window.TRUSTED_DOMAINS || ["chittersync.com"];
+  }, []);
+
   return (
     <div
       className="flex min-h-screen items-center justify-center bg-gradient-to-br from-black to-gray-500 font-[Jost,sans-serif] p-4 select-none"
@@ -436,10 +621,17 @@ export default function Register() {
           {success && <div className="text-green-400 text-center mb-2">{success}</div>}
           {/* Username field */}
           <div>
-            <label htmlFor="username" className="block text-lg font-semibold mb-2">Username</label>
+            <label htmlFor="username" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+              <span className="relative flex items-center">
+                <HelpTooltip tooltip={fieldHelp.username}>
+                  <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                </HelpTooltip>
+                Username
+              </span>
+            </label>
             <div className="relative flex gap-2 items-center">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                <FontAwesomeIcon icon={faAt} />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 flex items-center justify-center w-6 h-6">
+                <FontAwesomeNoSSR icon={faAt} />
               </span>
               <input
                 type="text"
@@ -459,15 +651,23 @@ export default function Register() {
                 className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mb-2 flex items-center justify-center"
                 aria-label="Generate username"
               >
-                <FontAwesomeIcon icon={faWandMagicSparkles} />
+                <FontAwesomeNoSSR icon={faWandMagicSparkles} />
               </button>
             </div>
           </div>
+          {/* Login ID field */}
           <div>
-            <label htmlFor="login-id" className="block text-lg font-semibold mb-2">Login ID</label>
+            <label htmlFor="login-id" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+              <span className="relative flex items-center">
+                <HelpTooltip tooltip={fieldHelp.loginId}>
+                  <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                </HelpTooltip>
+                Login ID
+              </span>
+            </label>
             <div className="relative flex gap-2 items-center">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                <FontAwesomeIcon icon={faIdBadge} />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 flex items-center justify-center w-6 h-6">
+                <FontAwesomeNoSSR icon={faIdBadge} />
               </span>
               {/* Accessibility: add aria-labels and autoComplete for loginId */}
               <input
@@ -488,7 +688,7 @@ export default function Register() {
                 className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mb-2 flex items-center justify-center"
                 aria-label="Generate login ID"
               >
-                <FontAwesomeIcon icon={faIdBadge} />
+                <FontAwesomeNoSSR icon={faIdBadge} />
               </button>
             </div>
             <div className="w-full h-2 rounded mb-1">
@@ -503,10 +703,20 @@ export default function Register() {
               {loginIdStrength.label}
             </div>
           </div>
+          {/* Password field */}
           <div>
-            <label htmlFor="password" className="block text-lg font-semibold mb-2">Password</label>
-            <div className="flex gap-2 items-center">
-              {/* Accessibility: add aria-label for password */}
+            <label htmlFor="password" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+              <span className="relative flex items-center">
+                <HelpTooltip tooltip={fieldHelp.password}>
+                  <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                </HelpTooltip>
+                Password
+              </span>
+            </label>
+            <div className="relative flex gap-2 items-center">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 flex items-center justify-center w-6 h-6">
+                <FontAwesomeNoSSR icon={faKey} />
+              </span>
               <input
                 type={showPassword ? "text" : "password"}
                 id="password"
@@ -525,7 +735,7 @@ export default function Register() {
                 className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mb-2 flex items-center justify-center"
                 aria-label="Generate password"
               >
-                <FontAwesomeIcon icon={faKey} />
+                <FontAwesomeNoSSR icon={faKey} />
               </button>
               <button
                 type="button"
@@ -534,7 +744,7 @@ export default function Register() {
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 tabIndex={0}
               >
-                <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
+                <FontAwesomeNoSSR icon={showPassword ? faEyeSlash : faEye} />
               </button>
             </div>
             <div className="w-full h-2 rounded mb-1">
@@ -551,7 +761,14 @@ export default function Register() {
           </div>
           {/* Dynamic Email Inputs */}
           <div>
-            <label className="block text-lg font-semibold mb-2">Email</label>
+            <label className="block text-lg font-semibold mb-2 flex items-center gap-2">
+              <span className="relative flex items-center">
+                <HelpTooltip tooltip={Array.isArray(fieldHelp.email) ? fieldHelp.email : [fieldHelp.email]}>
+                  <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                </HelpTooltip>
+                Email
+              </span>
+            </label>
             {form.email.map((email, idx) => {
               const svg = getEmailProviderSvg(email);
               const domain = email.split("@")[1]?.toLowerCase() || "";
@@ -594,7 +811,14 @@ export default function Register() {
           </div>
           {/* Dynamic Phone Inputs */}
           <div>
-            <label className="block text-lg font-semibold mb-2">Phone Number</label>
+            <label className="block text-lg font-semibold mb-2 flex items-center gap-2">
+              <span className="relative flex items-center">
+                <HelpTooltip tooltip={Array.isArray(fieldHelp.phone) ? fieldHelp.phone : [fieldHelp.phone]}>
+                  <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                </HelpTooltip>
+                Phone Number
+              </span>
+            </label>
             {form.phone.map((phone, idx) => {
               let flag = "";
               let flagSvg = null;
@@ -609,7 +833,7 @@ export default function Register() {
                     {flagSvg ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={flagSvg} alt="flag" className="w-5 h-5 object-contain" />
-                    ) : (flag || <FontAwesomeIcon icon={faPhone} />)}
+                    ) : (flag || <FontAwesomeNoSSR icon={faPhone} />)}
                   </span>
                   {/* Accessibility: add aria-label for phone number */}
                   <input
@@ -633,68 +857,253 @@ export default function Register() {
               );
             })}
           </div>
-          {/* Dynamic Location Inputs */}
+          {/* DOB field */}
           <div>
-            <label className="block text-lg font-semibold mb-2">Location (optional)</label>
-            {form.location.map((loc, idx) => {
-              const flag = getCountryFlagFromLocation(loc);
-              const flagSvg = getFlagSvg(flag);
-              return (
-                <div className="relative flex gap-2 items-center mb-2" key={idx}>
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg">
-                    {flagSvg ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={flagSvg} alt="flag" className="w-5 h-5 object-contain" />
-                    ) : (flag || <FontAwesomeIcon icon={faLocationDot} />)}
-                  </span>
-                  {/* Accessibility: add aria-label for location */}
+            <label htmlFor="dob" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+              <span className="relative flex items-center">
+                <HelpTooltip tooltip={Array.isArray(fieldHelp.dob) ? fieldHelp.dob : [fieldHelp.dob]}>
+                  <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                </HelpTooltip>
+                Date of Birth
+              </span>
+            </label>
+            <input
+              type="date"
+              id="dob"
+              name="dob"
+              required
+              className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              value={form.dob}
+              onChange={handleChange}
+              aria-label="Date of Birth"
+            />
+          </div>
+          {/* Optional Fields Dropdown */}
+          <div className="mb-2">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-4 py-2 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 mb-2"
+              onClick={() => setShowOptional(v => !v)}
+              aria-expanded={showOptional}
+              aria-controls="optional-fields"
+            >
+              <span>Optional Fields</span>
+              <span className={`transition-transform ${showOptional ? 'rotate-90' : ''}`}>▶</span>
+            </button>
+            {showOptional && (
+              <div id="optional-fields" className="space-y-4 mt-2">
+                {/* Name (Display Name) */}
+                <div>
+                  <label htmlFor="name" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+                    <span className="relative flex items-center">
+                      <HelpTooltip tooltip={Array.isArray(fieldHelp.name) ? fieldHelp.name : [fieldHelp.name]}>
+                        <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                      </HelpTooltip>
+                      Display Name (optional)
+                    </span>
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 flex items-center justify-center w-6 h-6">
+                      <FontAwesomeNoSSR icon={faKey} />
+                    </span>
+                  </div>
                   <input
                     type="text"
-                    name="location"
-                    placeholder="Location"
-                    aria-label="Location"
-                    className="w-full p-3 pl-10 rounded-lg border border-gray-300 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-400"
-                    value={loc}
-                    onChange={e => handleDynamicChange("location", idx, e.target.value)}
-                    />
+                    id="name"
+                    name="name"
+                    placeholder="Display Name"
+                    autoComplete="nickname"
+                    aria-label="Display Name"
+                    className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    value={form.name}
+                    onChange={handleChange}
+                  />
                 </div>
-              );
-            })}
+                {/* Gender */}
+                <div>
+                  <label htmlFor="gender" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+                    <span className="relative flex items-center">
+                      <HelpTooltip tooltip={Array.isArray(fieldHelp.gender) ? fieldHelp.gender : [fieldHelp.gender]}>
+                        <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                      </HelpTooltip>
+                      Gender (optional)
+                    </span>
+                  </label>
+                  {/* Custom Gender Dropdown */}
+                  <CustomGenderDropdown
+                    value={form.gender}
+                    onChange={val => setForm(prev => ({ ...prev, gender: val }))}
+                  />
+                </div>
+                {/* Location (already rendered as dynamic field, but move here for optional grouping) */}
+                <div>
+                  <label className="block text-lg font-semibold mb-2 flex items-center gap-2">
+                    <span className="relative flex items-center">
+                      <HelpTooltip tooltip={Array.isArray(fieldHelp.location) ? fieldHelp.location : [fieldHelp.location]}>
+                        <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                      </HelpTooltip>
+                      Location (optional)
+                    </span>
+                  </label>
+                  {form.location.map((loc, idx) => {
+                    const flag = getCountryFlagFromLocation(loc);
+                    const flagSvg = getFlagSvg(flag);
+                    return (
+                      <div className="relative flex gap-2 items-center mb-2" key={idx}>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg">
+                          {flagSvg ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={flagSvg} alt="flag" className="w-5 h-5 object-contain" />
+                          ) : (flag || <FontAwesomeNoSSR icon={faLocationDot} />)}
+                        </span>
+                        <input
+                          type="text"
+                          name="location"
+                          placeholder="Location"
+                          autoComplete="street-address"
+                          aria-label="Location"
+                          className="w-full p-3 pl-10 rounded-lg border border-gray-300 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-400"
+                          value={loc}
+                          onChange={e => handleDynamicChange("location", idx, e.target.value)}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Pronouns */}
+                <div>
+                  <label htmlFor="pronouns" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+                    <span className="relative flex items-center">
+                      <HelpTooltip tooltip={["How you want to be referred to (e.g. he/him, she/her, they/them, etc.)"]}>
+                        <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                      </HelpTooltip>
+                      Pronouns (optional)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    id="pronouns"
+                    name="pronouns"
+                    placeholder="e.g. they/them"
+                    autoComplete="pronnouns"
+                    aria-label="Pronouns"
+                    className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    value={form.pronouns || ''}
+                    onChange={handleChange}
+                  />
+                </div>
+                {/* Bio */}
+                <div>
+                  <label htmlFor="bio" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+                    <span className="relative flex items-center">
+                      <HelpTooltip tooltip={["A short bio or description about yourself (max 200 characters)"]}>
+                        <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                      </HelpTooltip>
+                      Bio (optional)
+                    </span>
+                  </label>
+                  <textarea
+                    id="bio"
+                    name="bio"
+                    maxLength={200}
+                    placeholder="Tell us about yourself..."
+                    aria-label="Bio"
+                    className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
+                    value={form.bio || ''}
+                    onChange={handleChange}
+                  />
+                  <div className="text-xs text-gray-400 text-right">{(form.bio || '').length}/200</div>
+                </div>
+                {/* Website */}
+                <div>
+                  <label htmlFor="website" className="block text-lg font-semibold mb-2 flex items-center gap-2">
+                    <span className="relative flex items-center">
+                      <HelpTooltip tooltip={["A personal website, portfolio, or social link (optional)"]}>
+                        <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+                      </HelpTooltip>
+                      Website (optional)
+                    </span>
+                  </label>
+                  <input
+                    type="url"
+                    id="website"
+                    name="website"
+                    placeholder="https://example.com"
+                    autoComplete="url"
+                    aria-label="Website"
+                    className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    value={form.website || ''}
+                    onChange={handleChange}
+                  />
+                  {websiteEasterEgg && (
+                    <div className="flex items-center gap-2 mt-1 animate-bounce text-yellow-300 text-sm font-bold">
+                      <FontAwesomeNoSSR icon={faWarning} className="text-xl" />
+                      <span>very funny</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-          <div className="flex gap-2">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="tos-agreement"
-                name="ToS Agreement"
-                className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-400"
-                checked={form.tosAgreement}
-                onChange={handleChange}
-                aria-label="I agree to the Terms of Service and Privacy Policy"
+          <div className="flex gap-2 items-center mb-2">
+            <HelpTooltip tooltip={["You must agree to the Terms of Service and Privacy Policy to create an account. This is required for all users."]}>
+              <FontAwesomeNoSSR icon={faCircleQuestion} className="mr-2 text-blue-300 cursor-pointer" />
+            </HelpTooltip>
+            <input
+              type="checkbox"
+              id="tos-agreement"
+              name="ToS Agreement"
+              className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-400"
+              checked={form.tosAgreement}
+              onChange={handleTosCheckbox}
+              aria-label="I agree to the Terms of Service and Privacy Policy"
+              disabled={tosActive || (!((tosLinksOpened.tos && tosLinksOpened.pp) || tosProgress >= 100))}
+            />
+            <label htmlFor="tos-agreement" className="ml-2 text-sm text-gray-300 cursor-pointer">
+              I agree to the{" "}
+              <a
+                href="https://support.chittersync.com/legal/tos"
+                className={`text-purple-400 hover:underline ${tosLinksOpened.tos ? 'font-bold underline' : ''}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={e => handleTosLinkClick(e, 'tos')}
+              >
+                Terms of Service
+              </a>{" "}
+              and{" "}
+              <a
+                href="https://support.chittersync.com/legal/pp"
+                className={`text-purple-400 hover:underline ${tosLinksOpened.pp ? 'font-bold underline' : ''}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={e => handleTosLinkClick(e, 'pp')}
+              >
+                Privacy Policy
+              </a>
+            </label>
+          </div>
+          {tosActive && (
+            <div className="w-full h-3 bg-gray-700 rounded mb-2 overflow-hidden">
+              <div
+                className="h-3 bg-purple-500 transition-all duration-100"
+                style={{ width: `${tosProgress}%` }}
               />
-              <label htmlFor="tos-agreement" className="ml-2 text-sm text-gray-300 cursor-pointer">
-                I agree to the{" "}
-                <a href="/tos" className="text-purple-400 hover:underline" target="_blank" rel="noreferrer">
-                  Terms of Service
-                </a>{" "}
-                and{" "}
-                <a href="/privacy" className="text-purple-400 hover:underline" target="_blank" rel="noreferrer">
-                  Privacy Policy
-                </a>
-              </label>
             </div>
-          </div>
+          )}
+          {tosMessage && (
+            <div className="text-yellow-300 text-xs mb-2 text-center">{tosMessage}</div>
+          )}
           <button
             type="submit"
             className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 flex items-center justify-center"
             aria-label="Create account"
           >
-            <FontAwesomeIcon icon={faUser} className="mr-2" />
+            <FontAwesomeNoSSR icon={faUser} className="mr-2" />
             Create Account
           </button>
           <div className="mt-4 text-center text-sm text-gray-400">
             Already have an account?{" "}
-            <a href="/login" className="text-purple-400 hover:underline">
+            <a href="/signin" className="text-purple-400 hover:underline">
               Sign in
             </a>
           </div>

@@ -2,10 +2,6 @@
 
 import { useState, useEffect } from "react";
 
-export const metadata = {
-  title: 'Sign in to your account',
-};
-
 if (typeof window !== "undefined") {
   // @ts-expect-error: window.TRUSTED_DOMAINS is a custom global for trusted redirect logic
   window.TRUSTED_DOMAINS = window.TRUSTED_DOMAINS || ["chittersync.com"];

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: {
     default: "ChitterSync Auth",
-    template: "% | ChitterSync Account Authorization"
+    template: "%s | ChitterSync Account Authorization"
   },
   description: "Sign into or Create your own ChitterSync Account",
 };

@@ -1,7 +1,4 @@
 // src/app/not-found.tsx
-export const metadata = {
-  title: '404',
-};
 export default function NotFound() {
   return (
     <div>

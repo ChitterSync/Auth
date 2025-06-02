@@ -8,7 +8,7 @@ import { parsePhoneNumberFromString, AsYouType } from "libphonenumber-js";
 
 export const metadata = {
   title: 'Account Registration',
-};
+}
 // AES-GCM encryption helpers
 async function encryptPassword(password: string, key: CryptoKey): Promise<string> {
   const enc = new TextEncoder();

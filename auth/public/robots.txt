@@ -1,0 +1,5 @@
+User-Agent: *
+Allow: /register
+Allow: /signin
+Allow: /
+Disallow: /*

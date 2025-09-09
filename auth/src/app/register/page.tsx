@@ -333,9 +333,9 @@ export default function Register() {
   // Fix: Add missing key props for array elements in fieldHelp definitions
   const fieldHelp = {
     username: [
-      "Your public username for ChitterSync. \n\nthis is required because it is a your personal unique identifier for ChitterSync, share this with others so they can add you as a friend.\n\nButton Help: \n\n ",
+      "Your public username for ChitterSync. \n\nthis is required because it is a your personal unique identifier for ChitterSync, share this with others so they can add you as a friend. this is also what shows up on your profile\n\nButton Help: \n\n ",
       <FontAwesomeNoSSR icon={faWandMagicSparkles} key="icon-wand" />,
-      " generates a random username for you if you cannot think of one."
+      " generates a random username for you from a list of adjectives and nouns if you cannot think of one."
     ],
     loginId: [
       "A unique ID for logging in (not public). \n\n treat this like a password, as it is a login method you can use. DO NOT SHARE THIS \n\nButton Help: \n\n",
@@ -392,7 +392,7 @@ export default function Register() {
       // Normalize input: remove protocol, trim, lowercase
       let val = value.trim().toLowerCase();
       val = val.replace(/^https?:\/\//, "");
-      setWebsiteEasterEgg(val === "example.com");
+      setWebsiteEasterEgg(val === "example.com" || val === "chittersync.com" || val === "google.com");
     }
     setForm((prev) => ({
       ...prev,

@@ -1066,7 +1066,6 @@ export default function Register() {
               checked={form.tosAgreement}
               onChange={handleTosCheckbox}
               aria-label="I agree to the Terms of Service and Privacy Policy"
-              disabled={tosActive || (!((tosLinksOpened.tos && tosLinksOpened.pp) || tosProgress >= 100))}
             />
             <label htmlFor="tos-agreement" className="ml-2 text-sm text-gray-300 cursor-pointer">
               I agree to the{" "}

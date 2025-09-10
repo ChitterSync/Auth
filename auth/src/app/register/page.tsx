@@ -55,14 +55,23 @@ function generateUsername() {
     "Bold", "Radiant", "Nimble", "Vivid", "Lively", "Daring", "Epic", "Glowing", "Jolly", "Witty",
     "Frosty", "Blazing", "Shadowy", "Electric", "Golden", "Crimson", "Azure", "Emerald", "Sable", "Ivory",
     "Gentle", "Wild", "Rapid", "Stealthy", "Vast", "Tiny", "Grand", "Shiny", "Dreamy", "Mystic",
-    "Serene", "Whimsical", "Radiant", "Harmonious", "Ethereal", "Celestial", "Luminous", "Velvet", "Amber", "Cobalt"
+    "Serene", "Whimsical", "Radiant", "Harmonious", "Ethereal", "Celestial", "Luminous", "Velvet", "Amber", "Cobalt",
+    "Brilliant", "Stellar", "Fierce", "Gleaming", "Frosted", "Infinite", "Bold", "Scarlet", "Thundering", "Glacial",
+    "Rustic", "Vibrant", "Dusky", "Dewy", "Prismatic", "Crystalline", "Blissful", "Elusive", "Gallant", "Majestic",
+    "Tenacious", "Verdant", "Twinkling", "Zealous", "Arctic", "Lucid", "Spirited", "Nocturnal", "Floral", "Blazing",
+    "Enchanting", "Opulent", "Starry", "Shimmering", "Dusky", "Iridescent", "Otherworldly", "Breezy", "Soothing", "Ebullient"
   ];
   const nouns = [
     "Falcon", "Otter", "Tiger", "Pixel", "Nova", "Shadow", "Blossom", "Echo", "Comet", "Panda",
     "Wolf", "Phoenix", "Dragon", "Orchid", "Quartz", "Raven", "Sparrow", "Maple", "Cedar", "Lotus",
     "Vortex", "Nimbus", "Coyote", "Lynx", "Moss", "Breeze", "Dune", "Coral", "Fawn", "Slate",
     "Hawk", "Fox", "Bear", "Moth", "Ivy", "Fern", "Wisp", "Flame", "Gale", "Frost",
-    "Zephyr", "Echo", "Quartz", "Sapphire", "Jade", "Onyx", "Opal", "Ruby", "Topaz", "Zinnia"
+    "Zephyr", "Echo", "Quartz", "Sapphire", "Jade", "Onyx", "Opal", "Ruby", "Topaz", "Zinnia",
+    "Glacier", "Thorn", "Aurora", "Falcon", "Nebula", "Clover", "Stag", "Petal", "Drift", "Ash",
+    "Pebble", "Ember", "Cobra", "Cascade", "Dawn", "Horizon", "Aspen", "Harbor", "Eclipse", "Galaxy",
+    "Timber", "Foxglove", "Ridge", "Quasar", "Fen", "Lark", "Willow", "River", "Pine", "Boulder",
+    "Poppy", "Larkspur", "Holly", "Meadow", "Quartzite", "Talon", "Glade", "Whisper", "Storm", "Cairn",
+    "Twilight", "Garnet", "Mist", "Canyon", "Sequoia", "Aether", "Obsidian", "Sprig", "Fjord", "Tundra"
   ];
   const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
   const noun = nouns[Math.floor(Math.random() * nouns.length)];

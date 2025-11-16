@@ -58,8 +58,11 @@ export default function SignIn() {
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [showFailBar, setShowFailBar] = useState(false);
+  const [failBarAttempts, setFailBarAttempts] = useState<number | null>(null);
   const [redirectMessage, setRedirectMessage] = useState("");
   const [showLogout, setShowLogout] = useState(false);
+  const [attempts, setAttempts] = useState<number | null>(null);
 
   useEffect(() => {
     // Show logout notification if ?loggedOut=true
@@ -94,6 +97,32 @@ export default function SignIn() {
     };
   }, []);
 
+  // Fetch last 7 failed login attempts for this loginId or IP
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/login-logs?n=20", {
+          headers: { "x-admin-device": "master" },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          let count = 0;
+          if (data.logs && Array.isArray(data.logs)) {
+            // Try to filter by loginId if entered, else by IP if available
+            let filtered = data.logs.filter((log: any) => log.success === false);
+            if (loginId) {
+              filtered = filtered.filter((log: any) => log.loginId === loginId);
+            } else if (typeof window !== 'undefined' && (window as any).ip) {
+              filtered = filtered.filter((log: any) => log.ip === (window as any).ip);
+            }
+            count = filtered.length > 7 ? 7 : filtered.length;
+          }
+          setAttempts(count);
+        }
+      } catch {}
+    })();
+  }, [loginId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -116,21 +145,41 @@ export default function SignIn() {
         }
       } else {
         setError("Invalid Login ID or Password.");
+        // Show notification bar with failed attempts
+        setFailBarAttempts(attempts);
+        setShowFailBar(true);
+        setTimeout(() => setShowFailBar(false), 3500);
       }
     } catch {
       setError("An error occurred. Please try again.");
+      setFailBarAttempts(attempts);
+      setShowFailBar(true);
+      setTimeout(() => setShowFailBar(false), 3500);
     }
   };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-black to-gray-500 font-[Jost,sans-serif] p-4">
-      <div className="main w-full max-w-md bg-white/10 p-8 rounded-xl shadow-lg backdrop-blur text-white">
+      <div className="main w-full max-w-md bg-white/10 p-8 rounded-xl shadow-lg backdrop-blur text-white relative">
         {showLogout && (
           <div className="mb-4 bg-green-100 text-green-800 p-2 rounded text-center border border-green-200">
             You have successfully logged out.
           </div>
         )}
         <h1 className="text-center text-3xl font-bold mb-6">Sign In</h1>
+        {attempts !== null && (
+          <div className="mb-2 text-center text-sm text-gray-200">
+            Failed Attempts: {attempts}/7
+          </div>
+        )}
+        {/* Notification bar for failed attempts */}
+        {showFailBar && (
+          <div className="absolute left-0 right-0 mx-auto mt-2 z-20 flex justify-center" style={{ top: '100%' }}>
+            <div className="bg-red-500 text-white px-4 py-2 rounded shadow-lg border border-red-700 animate-fade-in-out">
+              {failBarAttempts !== null ? `Failed Attempts: ${failBarAttempts}/7` : "Login failed."}
+            </div>
+          </div>
+        )}
         <form id="signin-form" className="flex flex-col gap-4" onSubmit={handleSubmit} autoComplete="off">
           {error && <div className="form__message form__message--error text-red-400 text-center">{error}</div>}
           <div>

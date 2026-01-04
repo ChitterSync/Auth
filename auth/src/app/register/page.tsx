@@ -479,8 +479,10 @@ export default function Register() {
     }
   };
 
-  const passwordStrength = getPasswordStrength(form.password);
-  const loginIdStrength = getLoginIdStrength(form.loginId);
+const passwordStrength = getPasswordStrength(form.password);
+const loginIdStrength = getLoginIdStrength(form.loginId);
+const canSubmit = form.tosAgreement;
+
 
   // Get redirect URL from query string (or default to /home)
   let redirectUrl = "/home";
@@ -1103,12 +1105,17 @@ export default function Register() {
           )}
           <button
             type="submit"
-            className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 flex items-center justify-center"
+            disabled={!canSubmit}
+            className={
+              "mt-4 bg-purple-600 text-white font-bold py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 flex items-center justify-center transition-colors " +
+              (canSubmit ? "hover:bg-purple-700 cursor-pointer" : "opacity-60 cursor-not-allowed")
+            }
             aria-label="Create account"
           >
             <FontAwesomeNoSSR icon={faUser} className="mr-2" />
             Create Account
           </button>
+
           <div className="mt-4 text-center text-sm text-gray-400">
             Already have an account?{" "}
             <a href="/signin" className="text-purple-400 hover:underline">

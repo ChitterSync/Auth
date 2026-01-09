@@ -3,6 +3,8 @@ import prisma from '../../../../../lib/prisma';
 import { createVerificationToken } from '../../../../../lib/auth/verification';
 import { getClientIp } from '../../../../../lib/auth/request';
 import { rateLimit } from '../../../../../lib/auth/rateLimit';
+import { logAuthEvent } from '../../../../../lib/auth/logging';
+import { hashPrivateValue } from '../../../../../lib/auth/private';
 
 type PasswordResetRequest = {
   identifier?: string;
@@ -36,19 +38,27 @@ export async function POST(req: NextRequest) {
       return genericResponse();
     }
 
+    const loginIdHash = hashPrivateValue(normalized);
+    const emailHash = hashPrivateValue(normalized.toLowerCase());
+    const phoneHash = hashPrivateValue(normalized);
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ loginId: normalized }, { username: normalized }, { emails: { contains: normalized } }],
+        OR: [
+          { loginId: loginIdHash },
+          { username: normalized },
+          { emails: { contains: emailHash } },
+          { phones: { contains: phoneHash } },
+        ],
       },
     });
 
     if (user) {
       await createVerificationToken(prisma, {
         userId: user.id,
-        identifier: normalized,
         type: 'password_reset',
         ttlMs: 1000 * 60 * 30,
       });
+      logAuthEvent({ event: 'password_reset_request', userId: user.id, ip });
     }
 
     return genericResponse();

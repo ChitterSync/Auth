@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { getSessionFromRefreshToken } from '../../../../lib/auth/session';
 import { clearRefreshCookie, REFRESH_COOKIE_NAME } from '../../../../lib/auth/cookies';
+import { getClientIp, getUserAgent } from '../../../../lib/auth/request';
+import { logAuthEvent } from '../../../../lib/auth/logging';
 
 export async function GET(req: NextRequest) {
   try {
@@ -51,6 +53,12 @@ export async function DELETE(req: NextRequest) {
 
     const res = NextResponse.json({ success: true }, { status: 200 });
     clearRefreshCookie(res);
+    logAuthEvent({
+      event: 'session_revoke_all',
+      userId: session.userId,
+      ip: getClientIp(req),
+      userAgent: getUserAgent(req),
+    });
     return res;
   } catch (error) {
     console.error('sessions DELETE failed', error);

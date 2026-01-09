@@ -3,6 +3,8 @@ import prisma from '../../../../../lib/prisma';
 import { consumeVerificationToken } from '../../../../../lib/auth/verification';
 import { getClientIp } from '../../../../../lib/auth/request';
 import { rateLimit } from '../../../../../lib/auth/rateLimit';
+import { logAuthEvent } from '../../../../../lib/auth/logging';
+import { hashPrivateValue } from '../../../../../lib/auth/private';
 
 type VerifyEmailConfirm = {
   email?: string;
@@ -37,17 +39,27 @@ export async function POST(req: NextRequest) {
       return genericResponse();
     }
 
-    const record = await consumeVerificationToken(prisma, {
-      identifier: normalized,
-      token,
-      type: 'verify_email',
+    const emailHash = hashPrivateValue(normalized);
+    const user = await prisma.user.findFirst({
+      where: {
+        emails: { contains: emailHash },
+      },
     });
+
+    const record = user
+      ? await consumeVerificationToken(prisma, {
+          userId: user.id,
+          token,
+          type: 'verify_email',
+        })
+      : null;
 
     if (record?.userId) {
       await prisma.user.update({
         where: { id: record.userId },
         data: { emailVerifiedAt: new Date() },
       });
+      logAuthEvent({ event: 'verify_email_confirm', userId: record.userId, ip });
     }
 
     return genericResponse();

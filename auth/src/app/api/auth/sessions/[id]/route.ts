@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
 import { getSessionFromRefreshToken } from '../../../../../lib/auth/session';
 import { REFRESH_COOKIE_NAME } from '../../../../../lib/auth/cookies';
+import { getClientIp, getUserAgent } from '../../../../../lib/auth/request';
+import { logAuthEvent } from '../../../../../lib/auth/logging';
 
 export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
   try {
@@ -25,6 +27,13 @@ export async function DELETE(req: NextRequest, context: { params: { id: string }
       data: { revokedAt: new Date() },
     });
 
+    logAuthEvent({
+      event: 'session_revoke',
+      userId: session.userId,
+      ip: getClientIp(req),
+      userAgent: getUserAgent(req),
+      metadata: { sessionId: target.id },
+    });
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error('sessions delete failed', error);

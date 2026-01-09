@@ -1,15 +1,14 @@
 import type { NextResponse } from 'next/server';
 
-export const REFRESH_COOKIE_NAME = 'ch_auth_refresh';
-
 const isProduction = process.env.NODE_ENV === 'production';
+export const REFRESH_COOKIE_NAME = isProduction ? '__Host-ch_auth_refresh' : 'ch_auth_refresh';
 
 export const getRefreshCookieOptions = () => ({
   httpOnly: true,
   secure: isProduction,
-  sameSite: 'lax' as const,
+  sameSite: 'strict' as const,
   path: '/',
-  maxAge: 60 * 60 * 24 * 30,
+  maxAge: 60 * 60 * 24 * 7,
 });
 
 export const setRefreshCookie = (res: NextResponse, token: string) => {

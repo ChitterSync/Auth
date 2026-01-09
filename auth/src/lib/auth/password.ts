@@ -1,7 +1,33 @@
 let argon2Module: typeof import('argon2') | null | undefined;
 let bcryptModule: typeof import('bcryptjs') | null | undefined;
 
-const BCRYPT_COST = 12;
+const isProduction = process.env.NODE_ENV === 'production';
+const BCRYPT_COST = parseNumber(process.env.BCRYPT_COST, 13);
+const PEPPER_PREFIX = 'pepper1:';
+const DEFAULT_ARGON2_MEMORY_COST = 65536;
+const DEFAULT_ARGON2_TIME_COST = 3;
+const DEFAULT_ARGON2_PARALLELISM = 1;
+
+const parseNumber = (value: string | undefined, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const getArgon2Options = () => ({
+  memoryCost: parseNumber(process.env.ARGON2_MEMORY_COST, DEFAULT_ARGON2_MEMORY_COST),
+  timeCost: parseNumber(process.env.ARGON2_TIME_COST, DEFAULT_ARGON2_TIME_COST),
+  parallelism: parseNumber(process.env.ARGON2_PARALLELISM, DEFAULT_ARGON2_PARALLELISM),
+});
+
+const getPasswordPepper = () => {
+  const pepper = process.env.PASSWORD_PEPPER || process.env.CHITTER_PASSWORD_PEPPER;
+  if (pepper) return Buffer.from(pepper, 'utf8');
+  if (isProduction) {
+    throw new Error('PASSWORD_PEPPER must be defined in production.');
+  }
+  return null;
+};
 
 const loadArgon2 = async () => {
   if (argon2Module !== undefined) return argon2Module;
@@ -26,12 +52,14 @@ const loadBcrypt = async () => {
 export const hashPassword = async (password: string) => {
   const argon2 = await loadArgon2();
   if (argon2) {
-    return argon2.hash(password, {
+    const pepper = getPasswordPepper();
+    const options = getArgon2Options();
+    const hash = await argon2.hash(password, {
       type: argon2.argon2id,
-      memoryCost: 19456,
-      timeCost: 2,
-      parallelism: 1,
+      ...options,
+      ...(pepper ? { secret: pepper } : {}),
     });
+    return pepper ? `${PEPPER_PREFIX}${hash}` : hash;
   }
 
   const bcrypt = await loadBcrypt();
@@ -45,14 +73,21 @@ export const hashPassword = async (password: string) => {
 export const verifyPassword = async (password: string, passwordHash: string) => {
   if (!passwordHash) return false;
 
-  if (passwordHash.startsWith('$argon2')) {
+  const usesPepper = passwordHash.startsWith(PEPPER_PREFIX);
+  const storedHash = usesPepper ? passwordHash.slice(PEPPER_PREFIX.length) : passwordHash;
+
+  if (storedHash.startsWith('$argon2')) {
     const argon2 = await loadArgon2();
     if (!argon2) return false;
-    return argon2.verify(passwordHash, password);
+    const pepper = usesPepper ? getPasswordPepper() : null;
+    if (usesPepper && !pepper) {
+      throw new Error('PASSWORD_PEPPER is required to verify this password hash.');
+    }
+    return argon2.verify(storedHash, password, pepper ? { secret: pepper } : undefined);
   }
 
   const bcrypt = await loadBcrypt();
   if (!bcrypt) return false;
 
-  return bcrypt.compare(password, passwordHash);
+  return bcrypt.compare(password, storedHash);
 };

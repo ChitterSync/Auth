@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v6 as uuidv6 } from 'uuid';
 import prisma from '../../../../lib/prisma';
 import { hashPassword } from '../../../../lib/auth/password';
+import { hashPrivateValue } from '../../../../lib/auth/private';
 
 type LegacyProfile = {
   username: string;
@@ -80,6 +81,10 @@ const parseStoredList = (value: unknown): string[] => {
 
 const serializeList = (values: string[]) => (values.length ? JSON.stringify(values) : null);
 
+const normalizeLoginId = (value: string) => value.trim();
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const normalizePhone = (value: string) => value.trim();
+
 const parseMetadata = (value: unknown): Record<string, unknown> => {
   if (!value) return {};
   if (typeof value === 'string') {
@@ -117,14 +122,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'A username is required to create a new account.' }, { status: 400 });
       }
 
+      const emailHashes = (legacy.emails ?? []).map(normalizeEmail).map(hashPrivateValue);
+      const phoneHashes = (legacy.phones ?? []).map(normalizePhone).map(hashPrivateValue);
       const created = await prisma.user.create({
         data: {
           id: uuidv6(),
-          loginId,
+          loginId: hashPrivateValue(normalizeLoginId(loginId)),
           username,
           passwordHash: legacy.password ? await hashPassword(legacy.password) : null,
-          emails: serializeList(legacy.emails ?? []),
-          phones: serializeList(legacy.phones ?? []),
+          emails: serializeList(emailHashes),
+          phones: serializeList(phoneHashes),
           name: sanitizeString(legacy.name) || username,
           gender: sanitizeString(legacy.gender),
           dob: legacy.dob ? new Date(legacy.dob) : null,
@@ -159,7 +166,7 @@ export async function POST(req: NextRequest) {
       where: {
         OR: [
           targetUsername ? { username: targetUsername } : undefined,
-          targetLoginId ? { loginId: targetLoginId } : undefined,
+          targetLoginId ? { loginId: hashPrivateValue(normalizeLoginId(targetLoginId)) } : undefined,
         ].filter(Boolean) as { username?: string; loginId?: string }[],
       },
     });
@@ -175,12 +182,14 @@ export async function POST(req: NextRequest) {
     const storedPhones = parseStoredList(target.phones);
     const storedLocations = parseStoredList(target.locations);
 
+    const legacyEmailHashes = (legacy.emails ?? []).map(normalizeEmail).map(hashPrivateValue);
+    const legacyPhoneHashes = (legacy.phones ?? []).map(normalizePhone).map(hashPrivateValue);
     const mergedEmails = options.copyContact !== false
-      ? mergeUnique(storedEmails, legacy.emails)
+      ? mergeUnique(storedEmails, legacyEmailHashes)
       : storedEmails;
 
     const mergedPhones = options.copyContact !== false
-      ? mergeUnique(storedPhones, legacy.phones)
+      ? mergeUnique(storedPhones, legacyPhoneHashes)
       : storedPhones;
 
     const mergedLocations = options.copyLocation !== false

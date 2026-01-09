@@ -5,6 +5,8 @@ import { hashPassword } from '../../../../lib/auth/password';
 import { createSession } from '../../../../lib/auth/session';
 import { setRefreshCookie } from '../../../../lib/auth/cookies';
 import { getClientIp, getUserAgent } from '../../../../lib/auth/request';
+import { logAuthEvent } from '../../../../lib/auth/logging';
+import { hashPrivateValue } from '../../../../lib/auth/private';
 
 type RegisterPayload = {
   loginId?: string;
@@ -34,6 +36,10 @@ const sanitizeString = (value: unknown): string | null =>
 
 const serializeList = (values: string[]) => (values.length ? JSON.stringify(values) : null);
 
+const normalizeLoginId = (value: string) => value.trim();
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const normalizePhone = (value: string) => value.trim();
+
 export async function POST(req: NextRequest) {
   try {
     const data: RegisterPayload = await req.json();
@@ -41,19 +47,25 @@ export async function POST(req: NextRequest) {
     const emails = sanitizeArray(data.email);
     const phones = sanitizeArray(data.phone);
     const locations = sanitizeArray(data.location);
+    const loginId = data.loginId?.trim() || '';
+    const username = data.username?.trim() || '';
 
     if (
-      !data.loginId?.trim() ||
+      !loginId ||
       !data.password ||
-      !data.username?.trim() ||
+      !username ||
       (!emails.length && !phones.length)
     ) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
 
+    const loginIdHash = hashPrivateValue(normalizeLoginId(loginId));
+    const emailHashes = emails.map(normalizeEmail).map(hashPrivateValue);
+    const phoneHashes = phones.map(normalizePhone).map(hashPrivateValue);
+
     const [existingByLogin, existingByUsername] = await Promise.all([
-      prisma.user.findUnique({ where: { loginId: data.loginId.trim() } }),
-      prisma.user.findUnique({ where: { username: data.username.trim() } }),
+      prisma.user.findUnique({ where: { loginId: loginIdHash } }),
+      prisma.user.findUnique({ where: { username } }),
     ]);
 
     if (existingByLogin || existingByUsername) {
@@ -64,11 +76,11 @@ export async function POST(req: NextRequest) {
     const created = await prisma.user.create({
       data: {
         id: uuidv6(),
-        loginId: data.loginId.trim(),
-        username: data.username.trim(),
+        loginId: loginIdHash,
+        username,
         passwordHash,
-        emails: serializeList(emails),
-        phones: serializeList(phones),
+        emails: serializeList(emailHashes),
+        phones: serializeList(phoneHashes),
         name: sanitizeString(data.name),
         gender: sanitizeString(data.gender),
         dob: data.dob ? new Date(data.dob) : null,
@@ -87,6 +99,12 @@ export async function POST(req: NextRequest) {
 
     const res = NextResponse.json({ userId: created.id }, { status: 201 });
     setRefreshCookie(res, refreshToken);
+    logAuthEvent({
+      event: 'register',
+      userId: created.id,
+      ip: getClientIp(req),
+      userAgent: getUserAgent(req),
+    });
     return res;
   } catch (error) {
     console.error('Auth register failed', error);

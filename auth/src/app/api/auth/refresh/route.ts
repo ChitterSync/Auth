@@ -4,6 +4,7 @@ import { rotateRefreshToken } from '../../../../lib/auth/session';
 import { clearRefreshCookie, REFRESH_COOKIE_NAME, setRefreshCookie } from '../../../../lib/auth/cookies';
 import { getClientIp, getUserAgent } from '../../../../lib/auth/request';
 import { rateLimit } from '../../../../lib/auth/rateLimit';
+import { logAuthEvent } from '../../../../lib/auth/logging';
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,7 +31,22 @@ export async function POST(req: NextRequest) {
     if (result.status === 'rotated') {
       const res = NextResponse.json({ success: true }, { status: 200 });
       setRefreshCookie(res, result.refreshToken);
+      logAuthEvent({
+        event: 'refresh',
+        userId: result.session.userId,
+        ip,
+        userAgent: getUserAgent(req),
+      });
       return res;
+    }
+
+    if (result.status === 'reused') {
+      logAuthEvent({
+        event: 'refresh_reuse',
+        userId: result.session.userId,
+        ip,
+        userAgent: getUserAgent(req),
+      });
     }
 
     const res = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

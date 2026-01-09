@@ -6,8 +6,10 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
 import { v6 as uuidv6 } from 'uuid';
 import { hashPassword, verifyPassword } from '../src/lib/auth/password';
+import { hashPrivateValue } from '../src/lib/auth/private';
 import { createSession, rotateRefreshToken } from '../src/lib/auth/session';
 import { NextRequest } from 'next/server';
+import { REFRESH_COOKIE_NAME } from '../src/lib/auth/cookies';
 
 const TEST_DB_URL = 'file:./prisma/test.db';
 
@@ -72,7 +74,7 @@ describe('auth utilities', () => {
     const user = await prisma.user.create({
       data: {
         id: uuidv6(),
-        loginId: 'login-rotation',
+        loginId: hashPrivateValue('login-rotation'),
         username: 'rotation',
         passwordHash: await hashPassword('pass-rotation'),
       },
@@ -109,10 +111,10 @@ describe('auth routes', () => {
     await prisma.user.create({
       data: {
         id: uuidv6(),
-        loginId: 'login-email',
+        loginId: hashPrivateValue('login-email'),
         username: 'emailuser',
         passwordHash: await hashPassword('pass-email'),
-        emails: JSON.stringify([email]),
+        emails: JSON.stringify([hashPrivateValue(email.toLowerCase())]),
       },
     });
 
@@ -134,7 +136,7 @@ describe('auth routes', () => {
     await prisma.user.create({
       data: {
         id: uuidv6(),
-        loginId: 'login-reset',
+        loginId: hashPrivateValue('login-reset'),
         username: 'resetuser',
         passwordHash: await hashPassword('pass-reset'),
       },
@@ -155,12 +157,38 @@ describe('auth routes', () => {
     expect(existingPayload).toEqual(missingPayload);
   });
 
+  it('returns generic responses for login attempts', async () => {
+    await resetDb();
+    await prisma.user.create({
+      data: {
+        id: uuidv6(),
+        loginId: hashPrivateValue('login-user'),
+        username: 'loginuser',
+        passwordHash: await hashPassword('pass-login'),
+      },
+    });
+
+    const { POST: login } = await import('../src/app/api/auth/login/route');
+    const resWrongPassword = await login(
+      makeRequest('http://localhost/auth/login', { identifier: 'login-user', password: 'nope' }),
+    );
+    const resMissingUser = await login(
+      makeRequest('http://localhost/auth/login', { identifier: 'missing', password: 'nope' }),
+    );
+
+    expect(resWrongPassword.status).toBe(401);
+    expect(resMissingUser.status).toBe(401);
+    const wrongPayload = await resWrongPassword.json();
+    const missingPayload = await resMissingUser.json();
+    expect(wrongPayload).toEqual(missingPayload);
+  });
+
   it('revokes a session by id', async () => {
     await resetDb();
     const user = await prisma.user.create({
       data: {
         id: uuidv6(),
-        loginId: 'login-revoke',
+        loginId: hashPrivateValue('login-revoke'),
         username: 'revokeuser',
         passwordHash: await hashPassword('pass-revoke'),
       },
@@ -178,7 +206,7 @@ describe('auth routes', () => {
 
     const { DELETE: deleteSession } = await import('../src/app/api/auth/sessions/[id]/route');
     const res = await deleteSession(
-      makeRequest('http://localhost/auth/sessions/delete', undefined, `ch_auth_refresh=${refreshToken}`),
+      makeRequest('http://localhost/auth/sessions/delete', undefined, `${REFRESH_COOKIE_NAME}=${refreshToken}`),
       { params: { id: extra.session.id } },
     );
 

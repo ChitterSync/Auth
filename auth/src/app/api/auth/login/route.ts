@@ -5,6 +5,8 @@ import { createSession } from '../../../../lib/auth/session';
 import { setRefreshCookie } from '../../../../lib/auth/cookies';
 import { getClientIp, getUserAgent } from '../../../../lib/auth/request';
 import { rateLimit } from '../../../../lib/auth/rateLimit';
+import { logAuthEvent } from '../../../../lib/auth/logging';
+import { hashPrivateValue } from '../../../../lib/auth/private';
 
 type LoginPayload = {
   identifier?: string;
@@ -28,22 +30,26 @@ export async function POST(req: NextRequest) {
     }
 
     const { identifier, password } = (await req.json().catch(() => ({}))) as LoginPayload;
-    if (!identifier || !password) {
+    const trimmedIdentifier = identifier?.trim();
+    if (!trimmedIdentifier || !password) {
       return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
     }
 
+    const loginIdHash = hashPrivateValue(trimmedIdentifier);
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ loginId: identifier }, { username: identifier }],
+        OR: [{ loginId: loginIdHash }, { username: trimmedIdentifier }],
       },
     });
 
     if (!user?.passwordHash) {
+      logAuthEvent({ event: 'login_failed', userId: user?.id ?? null, ip, userAgent: getUserAgent(req) });
       return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
     }
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
+      logAuthEvent({ event: 'login_failed', userId: user.id, ip, userAgent: getUserAgent(req) });
       return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
     }
 
@@ -54,6 +60,7 @@ export async function POST(req: NextRequest) {
 
     const res = NextResponse.json({ userId: user.id }, { status: 200 });
     setRefreshCookie(res, refreshToken);
+    logAuthEvent({ event: 'login', userId: user.id, ip, userAgent: getUserAgent(req) });
     return res;
   } catch (error) {
     console.error('Auth login failed', error);

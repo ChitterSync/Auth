@@ -1,6 +1,11 @@
 import { defineConfig } from '@prisma/config';
 
-const databaseUrl = process.env.DATABASE_URL ?? 'file:./prisma/dev.db';
+const isProduction = process.env.NODE_ENV === 'production';
+const databaseUrl = process.env.DATABASE_URL ?? (isProduction ? '' : 'file:./prisma/dev.db');
+
+if (isProduction && !process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL must be defined in production.');
+}
 
 export default defineConfig({
   schema: './prisma/schema.prisma',

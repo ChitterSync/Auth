@@ -4,6 +4,8 @@ import { consumeVerificationToken } from '../../../../../lib/auth/verification';
 import { hashPassword } from '../../../../../lib/auth/password';
 import { getClientIp } from '../../../../../lib/auth/request';
 import { rateLimit } from '../../../../../lib/auth/rateLimit';
+import { logAuthEvent } from '../../../../../lib/auth/logging';
+import { hashPrivateValue } from '../../../../../lib/auth/private';
 
 type PasswordResetConfirm = {
   identifier?: string;
@@ -38,11 +40,28 @@ export async function POST(req: NextRequest) {
       return genericResponse();
     }
 
-    const record = await consumeVerificationToken(prisma, {
-      identifier: identifier.trim(),
-      token,
-      type: 'password_reset',
+    const trimmedIdentifier = identifier.trim();
+    const loginIdHash = hashPrivateValue(trimmedIdentifier);
+    const emailHash = hashPrivateValue(trimmedIdentifier.toLowerCase());
+    const phoneHash = hashPrivateValue(trimmedIdentifier);
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { loginId: loginIdHash },
+          { username: trimmedIdentifier },
+          { emails: { contains: emailHash } },
+          { phones: { contains: phoneHash } },
+        ],
+      },
     });
+
+    const record = user
+      ? await consumeVerificationToken(prisma, {
+          userId: user.id,
+          token,
+          type: 'password_reset',
+        })
+      : null;
 
     if (record?.userId) {
       const passwordHash = await hashPassword(password);
@@ -50,6 +69,7 @@ export async function POST(req: NextRequest) {
         where: { id: record.userId },
         data: { passwordHash },
       });
+      logAuthEvent({ event: 'password_reset_confirm', userId: record.userId, ip });
     }
 
     return genericResponse();

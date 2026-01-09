@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
 import { hashPassword } from '../../../lib/auth/password';
 import { v6 as uuidv6 } from 'uuid';
+import { hashPrivateValue } from '../../../lib/auth/private';
 
 type RegisterPayload = {
   loginId?: string;
@@ -80,6 +81,10 @@ const serializeList = (values: string[]) => (values.length ? JSON.stringify(valu
 const serializeMetadata = (metadata: Record<string, unknown> | null) =>
   metadata ? JSON.stringify(metadata) : null;
 
+const normalizeLoginId = (value: string) => value.trim();
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const normalizePhone = (value: string) => value.trim();
+
 const parseR2Value = async (valuePromise: Promise<{ text(): Promise<string> } | null>) => {
   const record = await valuePromise;
   if (!record) return null;
@@ -97,20 +102,26 @@ export async function POST(req: NextRequest) {
     const emails = sanitizeArray(data.email);
     const phones = sanitizeArray(data.phone);
     const locations = sanitizeArray(data.location);
+    const loginId = data.loginId?.trim() || '';
+    const username = data.username?.trim() || '';
 
     if (
-      !data.loginId?.trim() ||
+      !loginId ||
       !data.password ||
-      !data.username?.trim() ||
+      !username ||
       (!emails.length && !phones.length)
     ) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
 
+    const loginIdHash = hashPrivateValue(normalizeLoginId(loginId));
+    const emailHashes = emails.map(normalizeEmail).map(hashPrivateValue);
+    const phoneHashes = phones.map(normalizePhone).map(hashPrivateValue);
+
     if (!process.env.DATABASE_URL) {
       const r2 = getR2();
-      const loginKey = `loginId:${data.loginId.trim()}`;
-      const usernameKey = `username:${data.username.trim()}`;
+      const loginKey = `loginIdHash:${loginIdHash}`;
+      const usernameKey = `username:${username}`;
       const [existingLogin, existingUsername] = await Promise.all([
         parseR2Value(r2.get(loginKey)),
         parseR2Value(r2.get(usernameKey)),
@@ -126,11 +137,11 @@ export async function POST(req: NextRequest) {
       const passwordHash = await hashPassword(data.password);
       const userRecord = {
         userId,
-        loginId: data.loginId.trim(),
+        loginIdHash,
         passwordHash,
-        email: emails,
-        phone: phones,
-        username: data.username.trim(),
+        emailHashes,
+        phoneHashes,
+        username,
         name: sanitizeString(data.name),
         gender: sanitizeString(data.gender),
         dob: data.dob,
@@ -150,8 +161,8 @@ export async function POST(req: NextRequest) {
     }
 
     const [existingByLogin, existingByUsername] = await Promise.all([
-      prisma.user.findUnique({ where: { loginId: data.loginId.trim() } }),
-      prisma.user.findUnique({ where: { username: data.username.trim() } }),
+      prisma.user.findUnique({ where: { loginId: loginIdHash } }),
+      prisma.user.findUnique({ where: { username } }),
     ]);
 
     if (existingByLogin) {
@@ -165,11 +176,11 @@ export async function POST(req: NextRequest) {
     const created = await prisma.user.create({
       data: {
         id: uuidv6(),
-        loginId: data.loginId.trim(),
-        username: data.username.trim(),
+        loginId: loginIdHash,
+        username,
         passwordHash,
-        emails: serializeList(emails),
-        phones: serializeList(phones),
+        emails: serializeList(emailHashes),
+        phones: serializeList(phoneHashes),
         name: sanitizeString(data.name),
         gender: sanitizeString(data.gender),
         dob: data.dob ? new Date(data.dob) : null,

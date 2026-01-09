@@ -10,7 +10,7 @@ model User {
   id                 String   @id
   loginId            String   @unique
   username           String   @unique
-  passwordHash       String?
+  passwordHash       String   @map("password")
   emails             String?
   phones             String?
   name               String?
@@ -22,12 +22,18 @@ model User {
   website            String?
   tosAgreement       Boolean  @default(false)
   metadata           String?
+  legacySource       String?
+  legacyUserId       String?
+  legacyUsername     String?
+  legacyMetadata     String?
   emailVerifiedAt    DateTime?
   createdAt          DateTime @default(now())
   settings           UserSetting?
   sessions           Session[]
   oauthAccounts      OAuthAccount[]
   verificationTokens VerificationToken[]
+
+  @@unique([legacySource, legacyUserId])
 }
 
 model UserSetting {
@@ -48,32 +54,31 @@ model Session {
   lastSeenAt  DateTime?
   createdAt   DateTime @default(now())
   revokedAt   DateTime?
+
+  @@index([userId])
 }
 
 model VerificationToken {
   id         String   @id
-  userId     String?
-  user       User?    @relation(fields: [userId], references: [id])
-  identifier String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
   tokenHash  String
   type       String
   expiresAt  DateTime
   createdAt  DateTime @default(now())
   consumedAt DateTime?
+
+  @@index([userId, type])
 }
 
 model OAuthAccount {
-  id                String   @id
-  userId            String
-  user              User     @relation(fields: [userId], references: [id])
-  provider          String
-  providerAccountId String
-  accessToken       String?
-  refreshToken      String?
-  idToken           String?
-  expiresAt         DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id              String   @id
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  provider        String
+  providerUserId  String
+  providerEmail   String?
+  createdAt       DateTime @default(now())
 
-  @@unique([provider, providerAccountId])
+  @@unique([provider, providerUserId])
 }

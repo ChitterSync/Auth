@@ -3,6 +3,8 @@ import prisma from '../../../../../lib/prisma';
 import { createVerificationToken } from '../../../../../lib/auth/verification';
 import { getClientIp } from '../../../../../lib/auth/request';
 import { rateLimit } from '../../../../../lib/auth/rateLimit';
+import { logAuthEvent } from '../../../../../lib/auth/logging';
+import { hashPrivateValue } from '../../../../../lib/auth/private';
 
 type VerifyEmailRequest = {
   email?: string;
@@ -36,19 +38,20 @@ export async function POST(req: NextRequest) {
       return genericResponse();
     }
 
+    const emailHash = hashPrivateValue(normalized);
     const user = await prisma.user.findFirst({
       where: {
-        emails: { contains: normalized },
+        emails: { contains: emailHash },
       },
     });
 
     if (user) {
       await createVerificationToken(prisma, {
         userId: user.id,
-        identifier: normalized,
         type: 'verify_email',
         ttlMs: 1000 * 60 * 30,
       });
+      logAuthEvent({ event: 'verify_email_request', userId: user.id, ip });
     }
 
     return genericResponse();

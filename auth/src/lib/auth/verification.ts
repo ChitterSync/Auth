@@ -6,8 +6,7 @@ type VerificationTokenType = 'verify_email' | 'password_reset';
 export const createVerificationToken = async (
   prisma: PrismaClient,
   params: {
-    userId?: string | null;
-    identifier: string;
+    userId: string;
     type: VerificationTokenType;
     ttlMs: number;
   },
@@ -17,14 +16,13 @@ export const createVerificationToken = async (
   const expiresAt = new Date(Date.now() + params.ttlMs);
 
   await prisma.verificationToken.deleteMany({
-    where: { identifier: params.identifier, type: params.type },
+    where: { userId: params.userId, type: params.type },
   });
 
   const record = await prisma.verificationToken.create({
     data: {
       id: createToken(16),
-      userId: params.userId ?? null,
-      identifier: params.identifier,
+      userId: params.userId,
       tokenHash,
       type: params.type,
       expiresAt,
@@ -37,7 +35,7 @@ export const createVerificationToken = async (
 export const consumeVerificationToken = async (
   prisma: PrismaClient,
   params: {
-    identifier: string;
+    userId: string;
     token: string;
     type: VerificationTokenType;
   },
@@ -46,7 +44,7 @@ export const consumeVerificationToken = async (
   const now = new Date();
   const record = await prisma.verificationToken.findFirst({
     where: {
-      identifier: params.identifier,
+      userId: params.userId,
       tokenHash,
       type: params.type,
       consumedAt: null,

@@ -32,6 +32,25 @@ const makeRequest = (url: string, body?: Record<string, unknown>, cookie?: strin
   );
 };
 
+const makeGetRequest = (url: string, cookie?: string) => {
+  const headers = new Headers();
+  if (cookie) {
+    headers.set('cookie', cookie);
+  }
+  return new NextRequest(
+    new Request(url, {
+      method: 'GET',
+      headers,
+    }),
+  );
+};
+
+const extractCookie = (setCookie: string | null, name: string) => {
+  if (!setCookie) return '';
+  const first = setCookie.split(';')[0] || '';
+  return first.startsWith(`${name}=`) ? first : '';
+};
+
 const resetDb = async () => {
   await prisma.session.deleteMany();
   await prisma.verificationToken.deleteMany();
@@ -48,7 +67,7 @@ beforeAll(async () => {
     fs.unlinkSync(testDbPath);
   }
 
-  execSync('npx prisma db push --skip-generate', {
+  execSync('npx prisma db push --accept-data-loss', {
     stdio: 'inherit',
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
   });
@@ -181,6 +200,76 @@ describe('auth routes', () => {
     const wrongPayload = await resWrongPassword.json();
     const missingPayload = await resMissingUser.json();
     expect(wrongPayload).toEqual(missingPayload);
+  });
+
+  it('registers and logs in with a refresh cookie', async () => {
+    await resetDb();
+    const id = uuidv6();
+    const loginId = `login-${id}`;
+    const username = `user-${id.slice(0, 8)}`;
+    const password = 'Passw0rd!Test';
+    const email = [`user.${id}@example.com`];
+
+    const { POST: register } = await import('../src/app/api/auth/register/route');
+    const registerRes = await register(
+      makeRequest('http://localhost/auth/register', {
+        loginId,
+        password,
+        username,
+        email,
+        tosAgreement: true,
+      }),
+    );
+
+    expect(registerRes.status).toBe(201);
+    const registerCookie = registerRes.headers.get('set-cookie') ?? '';
+    expect(registerCookie).toContain(`${REFRESH_COOKIE_NAME}=`);
+    const registerPayload = await registerRes.json();
+    expect(registerPayload.userId).toBeTruthy();
+
+    const { POST: login } = await import('../src/app/api/auth/login/route');
+    const loginRes = await login(
+      makeRequest('http://localhost/auth/login', { identifier: loginId, password }),
+    );
+
+    expect(loginRes.status).toBe(200);
+    const loginCookie = loginRes.headers.get('set-cookie') ?? '';
+    expect(loginCookie).toContain(`${REFRESH_COOKIE_NAME}=`);
+  });
+
+  it('returns an authenticated user for auth me', async () => {
+    await resetDb();
+    const id = uuidv6();
+    const loginId = `login-${id}`;
+    const username = `user-${id.slice(0, 8)}`;
+    const password = 'Passw0rd!Test';
+    const email = [`user.${id}@example.com`];
+
+    const { POST: register } = await import('../src/app/api/auth/register/route');
+    const registerRes = await register(
+      makeRequest('http://localhost/auth/register', {
+        loginId,
+        password,
+        username,
+        email,
+        tosAgreement: true,
+      }),
+    );
+
+    expect(registerRes.status).toBe(201);
+    const setCookie = registerRes.headers.get('set-cookie');
+    const refreshCookie = extractCookie(setCookie, REFRESH_COOKIE_NAME);
+    expect(refreshCookie).toContain(`${REFRESH_COOKIE_NAME}=`);
+
+    const { GET: authMe } = await import('../src/app/api/auth/me/route');
+    const meRes = await authMe(
+      makeGetRequest('http://localhost/auth/me', refreshCookie),
+    );
+
+    expect(meRes.status).toBe(200);
+    const payload = await meRes.json();
+    expect(payload.authenticated).toBe(true);
+    expect(payload.user?.username).toBe(username);
   });
 
   it('revokes a session by id', async () => {

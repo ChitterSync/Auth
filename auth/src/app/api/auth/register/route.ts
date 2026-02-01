@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { v6 as uuidv6 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import prisma from '../../../../lib/prisma';
 import { hashPassword } from '../../../../lib/auth/password';
 import { createSession } from '../../../../lib/auth/session';
@@ -7,6 +7,7 @@ import { setRefreshCookie } from '../../../../lib/auth/cookies';
 import { getClientIp, getUserAgent } from '../../../../lib/auth/request';
 import { logAuthEvent } from '../../../../lib/auth/logging';
 import { hashPrivateValue } from '../../../../lib/auth/private';
+import { rateLimit } from '../../../../lib/auth/rateLimit';
 
 type RegisterPayload = {
   loginId?: string;
@@ -42,6 +43,20 @@ const normalizePhone = (value: string) => value.trim();
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const limit = rateLimit(`auth:register:${ip}`, { limit: 5, windowMs: 60_000 });
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': Math.ceil((limit.resetAt - Date.now()) / 1000).toString(),
+          },
+        },
+      );
+    }
+
     const data: RegisterPayload = await req.json();
 
     const emails = sanitizeArray(data.email);
@@ -49,14 +64,40 @@ export async function POST(req: NextRequest) {
     const locations = sanitizeArray(data.location);
     const loginId = data.loginId?.trim() || '';
     const username = data.username?.trim() || '';
+    const password = typeof data.password === 'string' ? data.password : '';
+
+    if (emails.length > 5 || phones.length > 5 || locations.length > 5) {
+      return NextResponse.json({ error: 'Too many contact entries.' }, { status: 400 });
+    }
 
     if (
       !loginId ||
-      !data.password ||
+      !password ||
       !username ||
       (!emails.length && !phones.length)
     ) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
+    }
+
+    if (loginId.length < 6 || loginId.length > 64) {
+      return NextResponse.json({ error: 'Login ID must be 6-64 characters.' }, { status: 400 });
+    }
+    const usernamePattern = /^[A-Za-z0-9._-]{3,32}$/;
+    if (!usernamePattern.test(username)) {
+      return NextResponse.json(
+        { error: 'Username must be 3-32 characters using letters, numbers, underscores, hyphens, or periods.' },
+        { status: 400 },
+      );
+    }
+    if (password.length < 10 || password.length > 256) {
+      return NextResponse.json({ error: 'Password must be 10-256 characters.' }, { status: 400 });
+    }
+    if (typeof data.bio === 'string' && data.bio.length > 200) {
+      return NextResponse.json({ error: 'Bio is too long.' }, { status: 400 });
+    }
+
+    if (emails.some((email) => email.split('@')[0]?.includes('+'))) {
+      return NextResponse.json({ error: 'Email forwarding is not allowed.' }, { status: 400 });
     }
 
     const loginIdHash = hashPrivateValue(normalizeLoginId(loginId));
@@ -72,10 +113,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Account already exists.' }, { status: 409 });
     }
 
-    const passwordHash = await hashPassword(data.password);
+    const passwordHash = await hashPassword(password);
     const created = await prisma.user.create({
       data: {
-        id: uuidv6(),
+        id: uuidv7(),
         loginId: loginIdHash,
         username,
         passwordHash,

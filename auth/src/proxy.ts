@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // This middleware extracts the username from subdomains like user.{username}.chittersync.com
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const host = req.headers.get('host') || '';
   // Example: user.john.chittersync.com
   // Split by '.' and look for the username in the second position

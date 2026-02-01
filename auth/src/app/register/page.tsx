@@ -6,33 +6,6 @@ import HelpTooltip from "./HelpTooltip";
 import { faWandMagicSparkles, faKey, faEye, faEyeSlash, faIdBadge, faPhone, faUser, faAt, faLocationDot, faCircleQuestion, faWarning, faMars, faVenus, faGenderless, faQuestion } from "@fortawesome/free-solid-svg-icons";
 import { parsePhoneNumberFromString, AsYouType } from "libphonenumber-js";
 
-// AES-GCM encryption helpers
-async function encryptPassword(password: string, key: CryptoKey): Promise<string> {
-  const enc = new TextEncoder();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    enc.encode(password)
-  );
-  // Return base64(iv + ciphertext)
-  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(ciphertext), iv.length);
-  return btoa(String.fromCharCode(...combined));
-}
-
-async function getAesKey(secret: string): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  return crypto.subtle.importKey(
-    "raw",
-    await crypto.subtle.digest("SHA-256", enc.encode(secret)),
-    { name: "AES-GCM" },
-    false,
-    ["encrypt"]
-  );
-}
-
 function isTrustedRedirect(url: string, allowedDomains?: string[]) {
   // Replace 'any' with 'unknown' and add type guard if needed
   const domains = allowedDomains || (typeof window !== "undefined" ? (window as unknown as { TRUSTED_DOMAINS: string[] }).TRUSTED_DOMAINS : ["chittersync.com"]);
@@ -303,6 +276,8 @@ function CustomGenderDropdown({ value, onChange }: { value: string, onChange: (v
 }
 
 export default function Register() {
+  const defaultHome =
+    process.env.NEXT_PUBLIC_CHITTERSYNC_HOME_URL || "https://chittersync.com/home";
   const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState<null | (() => void)>(null);
   const [form, setForm] = useState({
@@ -361,10 +336,10 @@ export default function Register() {
     ],
     email: "Used for account recovery and notifications. \n\n this is optional when you are using phone, but it is recommended to add an email for security purposes.",
     phone: "Used for account recovery and security. \n\n this is optional when you are using email, but it is recommended to add a phone number for security purposes.",
-    dob: "Your date of birth (for age verification). \n\n if the entry is younger than 14 years, you will be limited to only Gia Streaming for Kids until your set dob is 14 years or a guardian sponsors your account, if entry is less younger than 10 you will not be able to use ChitterSync at all.",
-    location: "Your country or city, (optional, if not provided, your country will be inferred from your IP address via GeoLocation).",
-    name: "what you show up as globally on ChitterSync (optional).",
-    gender: "Your gender."
+    dob: "Your date of birth (for age verification). \n\n if the entry is younger than 14 years, you will be limited to only Gia Streaming for Kids until your set dob is 14 years or a guardian sponsors your account, if entry is less younger than 10 you will not be able to use ChitterSync at all. we will not make you verify this if you are a Non-EU citizen, but if you are in the EU we may require age verification to comply with GDPR regulations.",
+    location: "Your country or city, (optional). \n\n this helps us provide localized content and services.",
+    name: "what you show up as globally on ChitterSync (optional). \n\n this is your display name that shows up on your profile and posts, \nit can be different from your username. this name will not show up in billing information. for billing, your legal name is used upon payments.",
+    gender: "This information is used for demographic purposes and to provide personalized content."
   };
 
   // Helper to update dynamic fields
@@ -445,17 +420,14 @@ export default function Register() {
     }
     // Generate a UUID for the new user (for client reference only)
     const userId = uuidv4();
-    // Encrypt the password before sending (using a static key for demo; use a secure key exchange in production)
-    const key = await getAesKey("your-strong-shared-secret");
-    const encryptedPassword = await encryptPassword(form.password, key);
     // Prepare payload
     const payload = {
       ...form,
-      password: encryptedPassword,
+      password: form.password,
       userId,
     };
     try {
-      const res = await fetch("/api/register", {
+      const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -468,11 +440,11 @@ export default function Register() {
       // Success: redirect
       const params = new URLSearchParams(window.location.search);
       const redirectUrl = params.get("redirect");
-      let finalUrl = "/home";
+      let finalUrl = defaultHome;
       if (redirectUrl && isTrustedRedirect(redirectUrl)) {
         finalUrl = redirectUrl;
       }
-      window.location.href = finalUrl;
+      window.location.href = `/setup?redirect=${encodeURIComponent(finalUrl)}`;
       setSuccess("Registration successful! You can now sign in.");
     } catch {
       setError("Registration failed. Please try again.");
@@ -484,15 +456,15 @@ const loginIdStrength = getLoginIdStrength(form.loginId);
 const canSubmit = form.tosAgreement;
 
 
-  // Get redirect URL from query string (or default to /home)
-  let redirectUrl = "/home";
+  // Get redirect URL from query string (or default to home)
+  let redirectUrl = defaultHome;
   let willRedirect = false;
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const url = params.get("redirect");
     if (url && isTrustedRedirect(url)) {
       redirectUrl = url;
-      willRedirect = url !== "/home";
+      willRedirect = url !== defaultHome;
     }
   }
 
@@ -616,7 +588,16 @@ const canSubmit = form.tosAgreement;
               </div>
               <button
                 className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-lg"
-                onClick={() => setShowDisplayNameModal(false)}
+                onClick={() => {
+                  setShowDisplayNameModal(false);
+                  setForm((prev) => ({
+                    ...prev,
+                    name: prev.name?.trim() ? prev.name : prev.username,
+                  }));
+                  if (pendingSubmit) {
+                    setTimeout(() => pendingSubmit(), 0);
+                  }
+                }}
               >Skip</button>
             </div>
             <h6 className="text-sm text-gray-500 mt-4 text-center">
@@ -651,6 +632,10 @@ const canSubmit = form.tosAgreement;
                 placeholder="Username"
                 required
                 autoComplete="username"
+                minLength={3}
+                maxLength={32}
+                pattern="^[A-Za-z0-9._-]{3,32}$"
+                title="3-32 characters; letters, numbers, underscores, hyphens, or periods only"
                 aria-label="Username"
                 className="w-full p-3 pl-10 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
                 value={form.username}
@@ -688,6 +673,8 @@ const canSubmit = form.tosAgreement;
                 placeholder="Login ID"
                 required
                 autoComplete="off"
+                minLength={6}
+                maxLength={64}
                 aria-label="Login ID"
                 className="w-full p-3 pl-10 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
                 value={form.loginId}
@@ -735,6 +722,8 @@ const canSubmit = form.tosAgreement;
                 placeholder="Password"
                 required
                 autoComplete="new-password"
+                minLength={10}
+                maxLength={256}
                 aria-label="Password"
                 className="w-full p-3 pl-10 rounded-lg border border-gray-300 text-gray-900 bg-white mb-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
                 value={form.password}

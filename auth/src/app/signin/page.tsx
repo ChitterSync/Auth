@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 
 if (typeof window !== "undefined") {
-  // @ts-expect-error: window.TRUSTED_DOMAINS is a custom global for trusted redirect logic
   window.TRUSTED_DOMAINS = window.TRUSTED_DOMAINS || ["chittersync.com"];
 }
 
@@ -24,37 +23,9 @@ function isTrustedRedirect(url: string, allowedDomains?: string[]) {
   }
 }
 
-// Import getAesKey and encryptPassword from register/page if needed, or redefine here
-// Copied from register/page.tsx for browser crypto compatibility
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function encryptPassword(password: string, key: CryptoKey): Promise<string> {
-  const enc = new TextEncoder();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    enc.encode(password)
-  );
-  // Return base64(iv + ciphertext)
-  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(ciphertext), iv.length);
-  return btoa(String.fromCharCode(...combined));
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function getAesKey(secret: string): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  return crypto.subtle.importKey(
-    "raw",
-    await crypto.subtle.digest("SHA-256", enc.encode(secret)),
-    { name: "AES-GCM" },
-    false,
-    ["encrypt"]
-  );
-}
-
 export default function SignIn() {
+  const defaultHome =
+    process.env.NEXT_PUBLIC_CHITTERSYNC_HOME_URL || "https://chittersync.com/home";
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -127,28 +98,30 @@ export default function SignIn() {
     e.preventDefault();
     setError("");
     try {
-      // Encrypt the password before sending (using a static key for demo; use a secure key exchange in production)
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const key = await getAesKey("your-strong-shared-secret");
-      // Simulate API call with encrypted password
-      if (loginId === "user" && password === "pass") {
-        const params = new URLSearchParams(window.location.search);
-        const redirectUrl = params.get("redirect");
-        let finalUrl = "/home";
-        if (redirectUrl && isTrustedRedirect(redirectUrl)) {
-          finalUrl = redirectUrl;
-        }
-        if ((window.event as KeyboardEvent)?.ctrlKey && redirectUrl) {
-          window.location.href = "chittersync.com/home";
-        } else {
-          window.location.href = finalUrl;
-        }
-      } else {
-        setError("Invalid Login ID or Password.");
-        // Show notification bar with failed attempts
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: loginId, password }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Invalid Login ID or Password.");
         setFailBarAttempts(attempts);
         setShowFailBar(true);
         setTimeout(() => setShowFailBar(false), 3500);
+        return;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const redirectUrl = params.get("redirect");
+      let finalUrl = defaultHome;
+      if (redirectUrl && isTrustedRedirect(redirectUrl)) {
+        finalUrl = redirectUrl;
+      }
+      if ((window.event as KeyboardEvent)?.ctrlKey && redirectUrl) {
+        window.location.href = defaultHome;
+      } else {
+        window.location.href = finalUrl;
       }
     } catch {
       setError("An error occurred. Please try again.");

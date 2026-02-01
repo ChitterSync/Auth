@@ -1,18 +1,18 @@
 let argon2Module: typeof import('argon2') | null | undefined;
 let bcryptModule: typeof import('bcryptjs') | null | undefined;
 
+const parseNumber = (value: string | undefined, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const isProduction = process.env.NODE_ENV === 'production';
 const BCRYPT_COST = parseNumber(process.env.BCRYPT_COST, 13);
 const PEPPER_PREFIX = 'pepper1:';
 const DEFAULT_ARGON2_MEMORY_COST = 65536;
 const DEFAULT_ARGON2_TIME_COST = 3;
 const DEFAULT_ARGON2_PARALLELISM = 1;
-
-const parseNumber = (value: string | undefined, fallback: number) => {
-  if (!value) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
 
 const getArgon2Options = () => ({
   memoryCost: parseNumber(process.env.ARGON2_MEMORY_COST, DEFAULT_ARGON2_MEMORY_COST),

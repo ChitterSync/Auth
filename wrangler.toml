@@ -1,0 +1,15 @@
+name = "chittersyncauth"
+compatibility_date = "2024-01-01"
+main = ".vercel/output/static/_worker.js"
+
+[build]
+command = "npm run build"
+
+[site]
+bucket = ".vercel/output/static"
+
+# D1 database binding (fill in after creating the database)
+[[d1_databases]]
+binding = "DB"
+database_name = "chittersync"
+database_id = "2d7a6a72-bdbd-49a4-a0bc-d7fea6285b6a"

@@ -1,0 +1,62 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getPrisma } from '../../../../lib/prisma';
+import { rotateRefreshToken } from '../../../../lib/auth/session';
+import { clearRefreshCookie, REFRESH_COOKIE_NAME, setRefreshCookie } from '../../../../lib/auth/cookies';
+import { getClientIp, getUserAgent } from '../../../../lib/auth/request';
+import { rateLimit } from '../../../../lib/auth/rateLimit';
+import { logAuthEvent } from '../../../../lib/auth/logging';
+
+export async function POST(req: NextRequest) {
+  try {
+    const prisma = await getPrisma();
+    const ip = getClientIp(req);
+    const limit = rateLimit(`auth:refresh:${ip}`, { limit: 20, windowMs: 60_000 });
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': Math.ceil((limit.resetAt - Date.now()) / 1000).toString(),
+          },
+        },
+      );
+    }
+
+    const refreshToken = req.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null;
+    const result = await rotateRefreshToken(prisma, refreshToken, {
+      userAgent: getUserAgent(req),
+      ip,
+    });
+
+    if (result.status === 'rotated') {
+      const res = NextResponse.json({ success: true }, { status: 200 });
+      setRefreshCookie(res, result.refreshToken);
+      logAuthEvent({
+        event: 'refresh',
+        userId: result.session.userId,
+        ip,
+        userAgent: getUserAgent(req),
+      });
+      return res;
+    }
+
+    if (result.status === 'reused') {
+      logAuthEvent({
+        event: 'refresh_reuse',
+        userId: result.session.userId,
+        ip,
+        userAgent: getUserAgent(req),
+      });
+    }
+
+    const res = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    clearRefreshCookie(res);
+    return res;
+  } catch (error) {
+    console.error('Auth refresh failed', error);
+    const res = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    clearRefreshCookie(res);
+    return res;
+  }
+}
